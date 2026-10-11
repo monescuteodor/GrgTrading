@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from .broker import Broker, candles_to_frame, make_broker
-from .config import Config
+from .config import Config, env_file
 from .features import atr
 from .model import SignalModel
 from .notify import Notifier
@@ -175,6 +175,8 @@ class TradingBot:
         self.notifier.send(f"Started in {self.cfg.profile.upper()} mode on {self.cfg.exchange} "
                            f"{', '.join(self.cfg.symbols)} [{self.cfg.timeframe}]")
         failures = 0
+        settings_file = env_file()
+        settings_mtime = _mtime(settings_file)
         while self._running:
             started = time.monotonic()
             try:
@@ -194,8 +196,21 @@ class TradingBot:
                 self.candles.clear()  # resync from scratch after errors
             delay = self.cfg.poll_seconds if failures == 0 else min(600, 15 * 2 ** min(failures, 5))
             while self._running and time.monotonic() - started < delay:
+                if _mtime(settings_file) != settings_mtime:
+                    # Edited from the dashboard: exit so the service manager restarts the bot
+                    # with the new settings. State and open positions are on disk.
+                    self.notifier.send("Settings changed; restarting to apply them.")
+                    self._running = False
+                    break
                 time.sleep(1)
         self.notifier.send("Stopped.")
+
+
+def _mtime(path) -> float | None:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
 
 
 def _now() -> str:

@@ -2,8 +2,28 @@
 from __future__ import annotations
 
 import os
+import re
+import socket
 from dataclasses import dataclass, fields
 from pathlib import Path
+
+
+def env_file() -> Path:
+    """The .env file the bot reads and the dashboard edits."""
+    explicit = os.getenv("GRG_ENV_FILE")
+    if explicit:
+        return Path(explicit).resolve()
+    local = Path(".env")
+    if local.exists():
+        return local.resolve()
+    try:
+        from dotenv import find_dotenv
+        found = find_dotenv()
+        if found:
+            return Path(found).resolve()
+    except ImportError:
+        pass
+    return local.resolve()
 
 
 @dataclass(frozen=True)
@@ -48,13 +68,16 @@ class Config:
     telegram_chat_id: str = ""
     live_confirm: str = ""              # must be "I_UNDERSTAND_THE_RISKS" for live mode
     dashboard_port: int = 8080
-    dashboard_password: str = ""        # optional; browser asks for it (any username)
+    dashboard_password: str = ""        # optional initial password; otherwise set on first visit
+    bot_name: str = ""                  # shown on the dashboard; defaults to the hostname
 
     @classmethod
-    def from_env(cls, **overrides) -> "Config":
+    def from_env(cls, reload: bool = False, env_path: Path | None = None, **overrides) -> "Config":
+        """reload=True re-reads .env over values already in the environment
+        (used by the long-running dashboard after settings are edited)."""
         try:
             from dotenv import load_dotenv
-            load_dotenv()
+            load_dotenv(env_path or env_file(), override=reload)
         except ImportError:
             pass
         values = {}
@@ -97,6 +120,8 @@ class Config:
             raise ValueError("RISK_PER_TRADE must be between 0 and 0.05")
         if not 0 < self.max_position_pct <= 1:
             raise ValueError("MAX_POSITION_PCT must be between 0 and 1")
+        if not re.fullmatch(r"[A-Za-z0-9 _.-]{0,32}", self.bot_name):
+            raise ValueError("BOT_NAME may only contain letters, digits, spaces, '.', '_' and '-'")
         if self.sell_threshold >= self.buy_threshold:
             raise ValueError("SELL_THRESHOLD must be below BUY_THRESHOLD")
 
@@ -104,6 +129,10 @@ class Config:
     def profile(self) -> str:
         """Name used for state/journal files so paper, sandbox and live never mix."""
         return "sandbox" if self.mode == "live" and self.sandbox else self.mode
+
+    @property
+    def name(self) -> str:
+        return self.bot_name or socket.gethostname()
 
     @property
     def quote(self) -> str:

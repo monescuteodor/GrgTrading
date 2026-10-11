@@ -137,13 +137,24 @@ price drop is still accepted. So:
 
 ## Private dashboard
 
-`python -m grgtrading dashboard` serves a page on port 8080 with your equity
-curve, P&L per trade, open positions and recent trades. It only reads the bot's
-local state and journal: your numbers never leave the machine and are not part of
-the repository. The Raspberry Pi installer runs it as the `grgtrading-dashboard`
-service; open `http://grgtrading.local:8080` from a device on the same network.
-Set `DASHBOARD_PASSWORD` to require a password, and never forward this port on
-your router.
+`python -m grgtrading dashboard` serves a page on port 8080. The Raspberry Pi
+installer runs it as the `grgtrading-dashboard` service; open
+`http://grgtrading.local:8080` from a device on the same network.
+
+- **First visit:** you create the dashboard password (stored only as a salted hash
+  in `data/`). Forgot it? Delete `data/dashboard_auth.json` over SSH and restart
+  the dashboard service.
+- **Overview:** equity curve, P&L per trade, KPIs, open positions, recent trades.
+- **Settings:** change pairs, interval, thresholds and risk limits. Values are
+  validated, written to `.env`, and the bot restarts itself to apply them; open
+  positions are kept. Mode, exchange and API keys are **not** editable here, so a
+  leaked dashboard password can never switch the bot to real money.
+- **Bots:** see several bots in one table. Each bot shows a *fleet key* under
+  Settings; add another bot with its dashboard address and that key. The key only
+  unlocks a read-only summary.
+
+Your numbers stay on the machine and are not part of the repository. Never forward
+this port on your router.
 
 ## Telegram notifications (optional)
 
