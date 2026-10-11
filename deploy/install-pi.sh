@@ -52,8 +52,24 @@ Environment=PYTHONUNBUFFERED=1
 [Install]
 WantedBy=multi-user.target
 EOF
+sudo tee /etc/systemd/system/grgtrading-dashboard.service >/dev/null <<UNIT
+[Unit]
+Description=GrgTrading private dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=${USER_NAME}
+WorkingDirectory=${APP_DIR}
+ExecStart=${APP_DIR}/venv/bin/python -m grgtrading dashboard
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+UNIT
 sudo systemctl daemon-reload
-sudo systemctl enable grgtrading >/dev/null
+sudo systemctl enable grgtrading grgtrading-dashboard >/dev/null
 
 total_mb=$(free -m | awk '/^Mem:/ {m=$2} /^Swap:/ {s=$2} END {print m+s}')
 if [ "$total_mb" -lt 1000 ]; then
@@ -65,8 +81,9 @@ cat <<MSG
 Done. Next steps:
   1. nano .env                         (settings; paper mode by default)
   2. venv/bin/python -m grgtrading check
-  3. sudo systemctl start grgtrading   (starts now and on every boot)
+  3. sudo systemctl start grgtrading grgtrading-dashboard   (start now; both start on every boot)
   4. journalctl -u grgtrading -f       (live log, Ctrl+C to exit)
+  Dashboard: http://$(hostname).local:8080  (from a device on the same network)
   Status:  venv/bin/python -m grgtrading status
   Stop:    sudo systemctl stop grgtrading
 MSG

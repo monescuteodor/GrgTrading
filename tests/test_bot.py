@@ -167,3 +167,37 @@ def test_live_mode_requires_confirmation():
     Config(mode="live", sandbox=True, api_key="k", api_secret="s").validate()  # testnet: no real money
     assert Config(mode="live", sandbox=True).profile == "sandbox"
     Config(mode="live", api_key="k", api_secret="s", live_confirm="I_UNDERSTAND_THE_RISKS").validate()
+
+
+def test_dashboard_serves_data(tmp_path):
+    import json
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from grgtrading.dashboard import make_handler
+    from grgtrading.storage import TradeJournal
+
+    c = cfg(tmp_path, buy_threshold=0.55, min_model_edge=-1.0, dashboard_password="secret")
+    df = synthetic_ohlcv(3001, seed=4, momentum=0.4)
+    TradingBot(c, broker=PaperBroker(c, FakeExchange(df))).step()
+    j = TradeJournal(tmp_path / "trades_paper.db")
+    j.record(ts="2024-01-01T00:00:00+00:00", mode="paper", symbol="BTC/USDT", side="sell",
+             amount=1, price=100, cost=100, fee=0.1, reason="take_profit", pnl=1.5)
+    j.close()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(c))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        with pytest.raises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(url + "/api/data")
+        assert err.value.code == 401
+        req = urllib.request.Request(url + "/api/data", headers={"Authorization": "Basic dTpzZWNyZXQ="})
+        data = json.load(urllib.request.urlopen(req))
+        assert data["start_equity"] == c.starting_balance
+        assert data["summary"]["closed_trades"] == 1
+        assert len(data["equity_history"]) == 1
+        page = urllib.request.urlopen(urllib.request.Request(url + "/", headers={"Authorization": "Basic dTpzZWNyZXQ="}))
+        assert b"GrgTrading" in page.read()
+    finally:
+        server.shutdown()

@@ -47,6 +47,8 @@ class Config:
     telegram_token: str = ""
     telegram_chat_id: str = ""
     live_confirm: str = ""              # must be "I_UNDERSTAND_THE_RISKS" for live mode
+    dashboard_port: int = 8080
+    dashboard_password: str = ""        # optional; browser asks for it (any username)
 
     @classmethod
     def from_env(cls, **overrides) -> "Config":

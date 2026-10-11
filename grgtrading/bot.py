@@ -31,6 +31,7 @@ class TradingBot:
         self.notifier = Notifier(cfg)
         self.models = {s: SignalModel.load(cfg, self._model_path(s)) for s in cfg.symbols}
         self.candles: dict[str, pd.DataFrame] = {}
+        self._last_snapshot = float("-inf")
         self._running = True
 
     def _model_path(self, symbol: str):
@@ -125,6 +126,7 @@ class TradingBot:
                     update_trailing(self.cfg, pos, price, atr_value)
 
         # 2) Account-level guard.
+        self.state.last_prices = prices
         equity = self.equity(prices)
         status = self.state.guard.check(self.cfg, equity, datetime.now(timezone.utc))
         if status == "kill":
@@ -147,6 +149,13 @@ class TradingBot:
                     break
                 self._open(symbol, price, atr_value, prob, equity)
         self._persist(self.equity(prices))
+        self._snapshot_equity()
+
+    def _snapshot_equity(self) -> None:
+        """Equity history for the dashboard chart, at most every 5 minutes."""
+        if time.monotonic() - self._last_snapshot >= 300:
+            self.journal.record_equity(self.state.last_heartbeat, self.state.last_equity)
+            self._last_snapshot = time.monotonic()
 
     def _persist(self, equity: float) -> None:
         self.state.last_equity = equity
