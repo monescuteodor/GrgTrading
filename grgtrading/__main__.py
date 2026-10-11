@@ -1,4 +1,4 @@
-"""Command line: python -m grgtrading {run,backtest,status,check,reset-kill}"""
+"""Command line: python -m grgtrading {run,backtest,status,check,dashboard,reset-kill}"""
 from __future__ import annotations
 
 import argparse
@@ -92,6 +92,11 @@ def cmd_check(cfg: Config, _args) -> None:
     print("No orders were placed.")
 
 
+def cmd_dashboard(cfg: Config, args) -> None:
+    from .dashboard import serve
+    serve(cfg, args.host, args.port or cfg.dashboard_port)
+
+
 def cmd_reset_kill(cfg: Config, _args) -> None:
     from .risk import AccountGuard
     from .storage import State
@@ -112,14 +117,17 @@ def main() -> None:
     bt.add_argument("--train", type=int, default=2000)
     sub.add_parser("status", help="show equity, positions and recent trades")
     sub.add_parser("check", help="check API keys, balance and exchange minimums (no orders)")
+    dash = sub.add_parser("dashboard", help="private web dashboard on the local network")
+    dash.add_argument("--host", default="0.0.0.0")
+    dash.add_argument("--port", type=int, default=0)
     sub.add_parser("reset-kill", help="clear the drawdown kill switch")
     args = parser.parse_args()
 
     overrides = {"mode": "paper", "sandbox": False} if args.command == "backtest" else {}
     cfg = Config.from_env(**overrides)
-    if args.command in ("run", "backtest"):
+    if args.command in ("run", "backtest", "dashboard"):
         setup_logging(cfg)
-    {"run": cmd_run, "backtest": cmd_backtest, "status": cmd_status, "check": cmd_check,
+    {"run": cmd_run, "backtest": cmd_backtest, "status": cmd_status, "check": cmd_check, "dashboard": cmd_dashboard,
      "reset-kill": cmd_reset_kill}[args.command](cfg, args)
 
 

@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GrgTrading Dashboard</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f2; --surface: #fcfcfb; --surface-2: #efeee9; --border: #dedcd5;
+    --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+    --series-1: #2a78d6; --gain: #2a78d6; --loss: #e34948;
+    --good: #0ca30c; --critical: #d03b3b; --warning: #b57a00;
+    --grid: rgba(0,0,0,.07); --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0f0f0e; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
+      --text: #f0efec; --text-2: #c3c2b7; --muted: #8e8d85;
+      --series-1: #3987e5; --gain: #3987e5; --loss: #e66767;
+      --warning: #fab219; --grid: rgba(255,255,255,.07);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f0f0e; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8e8d85;
+    --series-1: #3987e5; --gain: #3987e5; --loss: #e66767;
+    --warning: #fab219; --grid: rgba(255,255,255,.07);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { width: min(1180px, 100% - 32px); margin: 0 auto; padding: 20px 0 40px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 18px; }
+  h1 { font-size: 1.25rem; margin: 0; letter-spacing: -.01em; }
+  h2 { font-size: 1rem; margin: 0 0 12px; }
+  .badge { font: 600 .75rem var(--mono); padding: 3px 8px; border-radius: 6px;
+           background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--text-2); }
+  .status i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .spacer { flex: 1; }
+  .updated { font-size: .8rem; color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .alert { border-left: 4px solid var(--critical); margin-bottom: 16px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .kpi .label { font-size: .8rem; color: var(--text-2); }
+  .kpi .value { font: 700 1.6rem/1.2 var(--mono); margin: 4px 0 2px; }
+  .kpi .sub { font-size: .8rem; color: var(--muted); }
+  .delta { font-family: var(--mono); }
+  .arrow { font-size: .75em; }
+  .arrow.up { color: var(--good); } .arrow.down { color: var(--critical); }
+  .grid2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .chart-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .chart-head h2 { margin: 0; flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { font: 500 .78rem system-ui, sans-serif; background: none; border: 0; color: var(--text-2);
+                padding: 5px 10px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
+  .chart { position: relative; height: 260px; }
+  .chart canvas { width: 100%; height: 100%; display: block; }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+           color: var(--muted); font-size: .9rem; padding: 20px; }
+  .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border);
+         border-radius: 8px; padding: 6px 9px; font-size: .8rem; box-shadow: 0 6px 20px rgba(0,0,0,.18);
+         white-space: nowrap; display: none; z-index: 2; }
+  .tip b { font-family: var(--mono); }
+  .tip .t { color: var(--muted); font-size: .75rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th { text-align: left; color: var(--text-2); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--grid); font-family: var(--mono); font-size: .8rem; }
+  td.txt { font-family: inherit; }
+  td, th { white-space: nowrap; }
+  .num { text-align: right; }
+  .table-wrap { overflow-x: auto; }
+  details summary { cursor: pointer; color: var(--text-2); font-size: .8rem; margin-top: 8px; }
+  .note { font-size: .78rem; color: var(--muted); margin-top: 18px; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>GrgTrading</h1>
+    <span class="badge" id="mode">…</span>
+    <span class="status" id="status"><i></i><span>Loading…</span></span>
+    <span class="spacer"></span>
+    <span class="updated" id="updated"></span>
+  </header>
+
+  <div class="card alert" id="kill" hidden></div>
+
+  <section class="kpis">
+    <div class="card kpi"><div class="label">Equity</div><div class="value" id="k-equity">–</div><div class="sub" id="k-equity-sub"></div></div>
+    <div class="card kpi"><div class="label">Total P&amp;L</div><div class="value delta" id="k-pnl">–</div><div class="sub" id="k-pnl-sub"></div></div>
+    <div class="card kpi"><div class="label">Realized P&amp;L</div><div class="value delta" id="k-real">–</div><div class="sub" id="k-real-sub"></div></div>
+    <div class="card kpi"><div class="label">Win rate</div><div class="value" id="k-win">–</div><div class="sub" id="k-win-sub"></div></div>
+    <div class="card kpi"><div class="label">Drawdown from peak</div><div class="value" id="k-dd">–</div><div class="sub" id="k-dd-sub"></div></div>
+  </section>
+
+  <section class="grid2">
+    <div class="card">
+      <div class="chart-head">
+        <h2>Equity over time</h2>
+        <div class="seg" id="range" role="group" aria-label="Time range">
+          <button data-h="24" aria-pressed="false">24h</button>
+          <button data-h="168" aria-pressed="false">7d</button>
+          <button data-h="720" aria-pressed="false">30d</button>
+          <button data-h="0" aria-pressed="true">All</button>
+        </div>
+      </div>
+      <div class="chart" id="eq-chart"><canvas></canvas><div class="tip"></div><div class="empty" hidden></div></div>
+      <details><summary>Show data table</summary><div class="table-wrap"><table id="eq-table"></table></div></details>
+    </div>
+    <div class="card">
+      <div class="chart-head"><h2>P&amp;L per closed trade</h2></div>
+      <div class="chart" id="pnl-chart"><canvas></canvas><div class="tip"></div><div class="empty" hidden></div></div>
+    </div>
+  </section>
+
+  <section class="card" style="margin-bottom:16px">
+    <h2>Open positions</h2>
+    <div class="table-wrap"><table id="positions"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Recent trades</h2>
+    <div class="table-wrap"><table id="trades"></table></div>
+  </section>
+
+  <p class="note">Private dashboard served by your bot on the local network. Refreshes every 30 seconds.
+    Paper mode values are simulated.</p>
+</div>
+
+<script>
+(() => {
+  let data = null;
+  let rangeHours = 0;
+  const $ = (id) => document.getElementById(id);
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  const money = (v, q = data?.quote || "") => (v == null ? "–" : `${v.toFixed(2)} ${q}`).trim();
+  const signed = (v, digits = 2) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(digits);
+  const arrow = (v) => v > 0 ? '<span class="arrow up" aria-hidden="true">▲</span> '
+                     : v < 0 ? '<span class="arrow down" aria-hidden="true">▼</span> ' : "";
+  const when = (ts) => {
+    const d = new Date(ts);
+    return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // ---------- data ----------
+  async function load() {
+    try {
+      const res = await fetch("api/data", { cache: "no-store" });
+      if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+      data = await res.json();
+      render();
+      $("updated").textContent = "Updated " + new Date().toLocaleTimeString();
+    } catch (err) {
+      setStatus("critical", "Dashboard error: " + err.message);
+    }
+  }
+
+  function setStatus(kind, text) {
+    const el = $("status");
+    el.querySelector("i").style.background = css(kind === "good" ? "--good" : kind === "warning" ? "--warning" : "--critical");
+    el.querySelector("span").textContent = (kind === "good" ? "✓ " : "! ") + text;
+  }
+
+  function render() {
+    $("mode").textContent = `${data.mode.toUpperCase()} · ${data.exchange} · ${data.timeframe}`;
+    const age = data.heartbeat_age_s;
+    if (age == null) setStatus("warning", "Bot has not run yet");
+    else if (age < 180) setStatus("good", `Bot running · last heartbeat ${Math.round(age)}s ago`);
+    else setStatus("critical", `Bot offline · last heartbeat ${Math.round(age / 60)} min ago`);
+
+    const kill = $("kill");
+    kill.hidden = !data.kill_switch;
+    if (data.kill_switch) kill.innerHTML = `<strong>! Kill switch active:</strong> ${esc(data.kill_switch)}`;
+
+    const eq = data.equity, start = data.start_equity;
+    const pnl = eq - start, pnlPct = start ? pnl / start * 100 : 0;
+    $("k-equity").textContent = eq.toFixed(2);
+    $("k-equity-sub").textContent = `${data.quote} · started at ${start.toFixed(2)}`;
+    $("k-pnl").innerHTML = arrow(pnl) + signed(pnl);
+    $("k-pnl-sub").textContent = `${signed(pnlPct)}% incl. open positions`;
+    const real = data.summary.realized_pnl;
+    $("k-real").innerHTML = arrow(real) + signed(real);
+    $("k-real-sub").textContent = `${data.summary.closed_trades} closed trades`;
+    const wr = data.summary.win_rate;
+    $("k-win").textContent = wr == null ? "–" : `${Math.round(wr * 100)}%`;
+    $("k-win-sub").textContent = wr == null ? "no closed trades yet" : "of closed trades in profit";
+    const peak = Math.max(data.peak_equity, eq);
+    const dd = peak ? (eq / peak - 1) * 100 : 0;
+    $("k-dd").textContent = `${dd.toFixed(2)}%`;
+    $("k-dd-sub").textContent = `kill switch at −${(data.max_drawdown_pct * 100).toFixed(0)}% · peak ${peak.toFixed(2)}`;
+
+    renderPositions();
+    renderTrades();
+    drawEquity();
+    drawPnl();
+  }
+
+  function renderPositions() {
+    const t = $("positions");
+    if (!data.positions.length) { t.innerHTML = '<tr><td class="txt" style="color:var(--muted)">No open positions. The bot is waiting for a signal.</td></tr>'; return; }
+    t.innerHTML = `<tr><th>Symbol</th><th class="num">Amount</th><th class="num">Entry</th><th class="num">Price</th>
+      <th class="num">Value</th><th class="num">Unrealized</th><th class="num">Stop</th><th class="num">Take profit</th><th>Opened</th></tr>` +
+      data.positions.map((p) => `<tr><td>${esc(p.symbol)}</td><td class="num">${p.amount.toFixed(6)}</td>
+        <td class="num">${p.entry_price.toFixed(2)}</td><td class="num">${p.price.toFixed(2)}</td>
+        <td class="num">${p.value.toFixed(2)}</td><td class="num">${arrow(p.unrealized_pnl)}${signed(p.unrealized_pnl)}</td>
+        <td class="num">${p.stop.toFixed(2)}</td><td class="num">${p.take_profit.toFixed(2)}</td>
+        <td class="txt">${when(p.opened_at)}</td></tr>`).join("");
+  }
+
+  function renderTrades() {
+    const t = $("trades");
+    if (!data.trades.length) { t.innerHTML = '<tr><td class="txt" style="color:var(--muted)">No trades yet.</td></tr>'; return; }
+    t.innerHTML = `<tr><th>Time</th><th>Symbol</th><th>Side</th><th class="num">Amount</th><th class="num">Price</th>
+      <th class="num">Fee</th><th>Reason</th><th class="num">P&amp;L</th></tr>` +
+      data.trades.slice(0, 50).map((r) => `<tr><td class="txt">${when(r.ts)}</td><td>${esc(r.symbol)}</td>
+        <td class="txt">${r.side === "buy" ? "Buy" : "Sell"}</td><td class="num">${r.amount.toFixed(6)}</td>
+        <td class="num">${r.price.toFixed(2)}</td><td class="num">${(r.fee || 0).toFixed(3)}</td>
+        <td class="txt">${esc(r.reason)}</td>
+        <td class="num">${r.pnl == null ? "–" : arrow(r.pnl) + signed(r.pnl)}</td></tr>`).join("");
+  }
+
+  // ---------- canvas helpers ----------
+  function setupCanvas(box) {
+    const canvas = box.querySelector("canvas");
+    const dpr = window.devicePixelRatio || 1;
+    const w = box.clientWidth, h = box.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+
+  function niceTicks(lo, hi, n = 4) {
+    if (hi === lo) { hi += 1; lo -= 1; }
+    const step0 = (hi - lo) / n, mag = 10 ** Math.floor(Math.log10(step0));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= step0);
+    const ticks = [];
+    const end = Math.ceil(hi / step - 1e-9) * step;
+    for (let v = Math.floor(lo / step + 1e-9) * step; v <= end + step * 1e-9; v += step) ticks.push(+v.toFixed(10));
+    return ticks;
+  }
+
+  function showEmpty(box, text) {
+    const e = box.querySelector(".empty");
+    e.hidden = !text; e.textContent = text || "";
+  }
+
+  function placeTip(box, x, y, html) {
+    const tip = box.querySelector(".tip");
+    tip.innerHTML = html; tip.style.display = "block";
+    const left = Math.min(Math.max(x + 12, 0), box.clientWidth - tip.offsetWidth);
+    tip.style.left = left + "px";
+    tip.style.top = Math.max(y - tip.offsetHeight - 10, 0) + "px";
+  }
+  const hideTip = (box) => (box.querySelector(".tip").style.display = "none");
+
+  // ---------- equity chart ----------
+  let eqGeom = null;
+  function drawEquity() {
+    const box = $("eq-chart");
+    const { ctx, w, h } = setupCanvas(box);
+    let pts = data.equity_history.map(([ts, v]) => ({ t: new Date(ts).getTime(), v }));
+    if (rangeHours) { const cut = Date.now() - rangeHours * 3600e3; pts = pts.filter((p) => p.t >= cut); }
+    renderEqTable(pts);
+    if (pts.length < 2) {
+      eqGeom = null;
+      showEmpty(box, "The chart fills in as the bot runs (one point every 5 minutes).");
+      return;
+    }
+    showEmpty(box, "");
+    const pad = { l: 54, r: 12, t: 12, b: 26 };
+    const start = data.start_equity;
+    const lo = Math.min(start, ...pts.map((p) => p.v)), hi = Math.max(start, ...pts.map((p) => p.v));
+    const ticks = niceTicks(lo, hi);
+    const y0 = ticks[0], y1 = ticks[ticks.length - 1];
+    const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+    const X = (t) => pad.l + (t - t0) / (t1 - t0 || 1) * (w - pad.l - pad.r);
+    const Y = (v) => pad.t + (1 - (v - y0) / (y1 - y0 || 1)) * (h - pad.t - pad.b);
+
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.fillStyle = css("--muted"); ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ticks.forEach((v) => {
+      ctx.beginPath(); ctx.moveTo(pad.l, Y(v)); ctx.lineTo(w - pad.r, Y(v)); ctx.stroke();
+      ctx.fillText(v.toFixed(2), pad.l - 8, Y(v));
+    });
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    const nx = Math.max(2, Math.floor((w - pad.l - pad.r) / 120));
+    for (let i = 0; i <= nx; i++) {
+      const t = t0 + (t1 - t0) * i / nx;
+      const d = new Date(t);
+      const label = (t1 - t0) > 2 * 864e5 ? d.toLocaleDateString([], { month: "short", day: "numeric" })
+                                           : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      ctx.fillText(label, Math.min(Math.max(X(t), pad.l + 20), w - pad.r - 20), h - pad.b + 8);
+    }
+
+    // starting balance reference
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = css("--muted");
+    ctx.beginPath(); ctx.moveTo(pad.l, Y(start)); ctx.lineTo(w - pad.r, Y(start)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.fillStyle = css("--text-2");
+    ctx.fillText("start", pad.l + 4, Y(start) - 3);
+
+    // area + line
+    const color = css("--series-1");
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(X(p.t), Y(p.v)) : ctx.moveTo(X(p.t), Y(p.v))));
+    ctx.lineTo(X(t1), Y(y0)); ctx.lineTo(X(t0), Y(y0)); ctx.closePath();
+    ctx.globalAlpha = 0.12; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(X(p.t), Y(p.v)) : ctx.moveTo(X(p.t), Y(p.v))));
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.stroke();
+
+    eqGeom = { pts, X, Y, pad, w, h, color };
+  }
+
+  function eqHover(e) {
+    const box = $("eq-chart");
+    if (!eqGeom) return;
+    const rect = box.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const { pts, X, Y, pad, h, color } = eqGeom;
+    let best = pts[0];
+    for (const p of pts) if (Math.abs(X(p.t) - x) < Math.abs(X(best.t) - x)) best = p;
+    drawEquity();
+    const ctx = box.querySelector("canvas").getContext("2d");
+    ctx.strokeStyle = css("--muted"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(X(best.t), pad.t); ctx.lineTo(X(best.t), h - pad.b); ctx.stroke();
+    ctx.beginPath(); ctx.arc(X(best.t), Y(best.v), 5, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = css("--surface"); ctx.stroke();
+    const diff = best.v - data.start_equity;
+    placeTip(box, X(best.t), Y(best.v),
+      `<div class="t">${when(best.t)}</div><b>${best.v.toFixed(2)} ${data.quote}</b> · ${signed(diff)} vs start`);
+  }
+
+  function renderEqTable(pts) {
+    const rows = pts.slice(-50).reverse();
+    $("eq-table").innerHTML = rows.length
+      ? `<tr><th>Time</th><th class="num">Equity</th></tr>` +
+        rows.map((p) => `<tr><td class="txt">${when(p.t)}</td><td class="num">${p.v.toFixed(2)}</td></tr>`).join("")
+      : '<tr><td class="txt">No data yet.</td></tr>';
+  }
+
+  // ---------- P&L per trade ----------
+  let pnlGeom = null;
+  function drawPnl() {
+    const box = $("pnl-chart");
+    const { ctx, w, h } = setupCanvas(box);
+    const sells = data.trades.filter((t) => t.side === "sell" && t.pnl != null).reverse();
+    if (!sells.length) { pnlGeom = null; showEmpty(box, "No closed trades yet."); return; }
+    showEmpty(box, "");
+    const pad = { l: 48, r: 10, t: 12, b: 14 };
+    const vals = sells.map((s) => s.pnl);
+    const ticks = niceTicks(Math.min(0, ...vals), Math.max(0, ...vals));
+    const y0 = ticks[0], y1 = ticks[ticks.length - 1];
+    const Y = (v) => pad.t + (1 - (v - y0) / (y1 - y0 || 1)) * (h - pad.t - pad.b);
+    const slot = (w - pad.l - pad.r) / sells.length;
+    const bw = Math.max(2, Math.min(28, slot - 2));
+
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = css("--muted");
+    ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ticks.forEach((v) => {
+      ctx.beginPath(); ctx.moveTo(pad.l, Y(v)); ctx.lineTo(w - pad.r, Y(v)); ctx.stroke();
+      ctx.fillText(v.toFixed(2), pad.l - 8, Y(v));
+    });
+    ctx.strokeStyle = css("--muted");
+    ctx.beginPath(); ctx.moveTo(pad.l, Y(0)); ctx.lineTo(w - pad.r, Y(0)); ctx.stroke();
+
+    const bars = sells.map((s, i) => {
+      const x = pad.l + i * slot + (slot - bw) / 2;
+      const top = Math.min(Y(s.pnl), Y(0)), height = Math.max(1, Math.abs(Y(s.pnl) - Y(0)));
+      ctx.fillStyle = css(s.pnl >= 0 ? "--gain" : "--loss");
+      const r = Math.min(4, bw / 2, height);
+      ctx.beginPath();
+      if (s.pnl >= 0) ctx.roundRect(x, top, bw, height, [r, r, 0, 0]);
+      else ctx.roundRect(x, top, bw, height, [0, 0, r, r]);
+      ctx.fill();
+      return { x, bw, s, y: Y(s.pnl) };
+    });
+    pnlGeom = { bars, slot, pad };
+  }
+
+  function pnlHover(e) {
+    const box = $("pnl-chart");
+    if (!pnlGeom) return;
+    const rect = box.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const i = Math.floor((x - pnlGeom.pad.l) / pnlGeom.slot);
+    const b = pnlGeom.bars[i];
+    if (!b) return hideTip(box);
+    placeTip(box, b.x + b.bw / 2, b.y,
+      `<div class="t">${when(b.s.ts)} · ${esc(b.s.symbol)}</div><b>${signed(b.s.pnl)} ${data.quote}</b> · ${esc(b.s.reason)}`);
+  }
+
+  // ---------- events ----------
+  const eqBox = $("eq-chart"), pnlBox = $("pnl-chart");
+  ["mousemove", "touchstart", "touchmove"].forEach((ev) => {
+    eqBox.addEventListener(ev, eqHover, { passive: true });
+    pnlBox.addEventListener(ev, pnlHover, { passive: true });
+  });
+  eqBox.addEventListener("mouseleave", () => { hideTip(eqBox); if (data) drawEquity(); });
+  pnlBox.addEventListener("mouseleave", () => hideTip(pnlBox));
+  $("range").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    rangeHours = +b.dataset.h;
+    $("range").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    if (data) drawEquity();
+  });
+  window.addEventListener("resize", () => { if (data) { drawEquity(); drawPnl(); } });
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => data && render());
+
+  load();
+  setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>
