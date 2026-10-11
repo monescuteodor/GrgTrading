@@ -80,17 +80,71 @@
   details summary { cursor: pointer; color: var(--text-2); font-size: .8rem; margin-top: 8px; }
   .note { font-size: .78rem; color: var(--muted); margin-top: 18px; }
   @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+
+  /* tabs, forms, auth */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; overflow-x: auto; }
+  .tabs button { font: 600 .9rem system-ui, sans-serif; background: none; border: 0; color: var(--text-2);
+                 padding: 8px 12px; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; }
+  .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--series-1); }
+  .btn { font: 600 .85rem system-ui, sans-serif; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+         border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+  .btn.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+  .btn.small { padding: 4px 10px; font-size: .78rem; }
+  .btn:disabled { opacity: .6; cursor: default; }
+  .link { background: none; border: 0; color: var(--text-2); cursor: pointer; font-size: .85rem; text-decoration: underline; }
+  label.field { display: grid; gap: 4px; align-content: start; font-size: .85rem; color: var(--text-2); }
+  label.field span.help { font-size: .75rem; color: var(--muted); }
+  input, select { font: 500 .9rem var(--mono); color: var(--text); background: var(--bg); border: 1px solid var(--border);
+                  border-radius: 8px; padding: 8px 10px; width: 100%; }
+  input:focus, select:focus { outline: 2px solid var(--series-1); outline-offset: 1px; }
+  .switch { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--text); }
+  .switch input { width: auto; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .actions { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+  .msg { font-size: .85rem; }
+  .msg.ok { color: var(--good); } .msg.err { color: var(--critical); }
+  .stack { display: grid; gap: 16px; }
+  .auth-box { max-width: 380px; margin: 12vh auto 0; }
+  .auth-box h1 { margin-bottom: 4px; }
+  .auth-box p { color: var(--text-2); font-size: .9rem; margin: 0 0 16px; }
+  .auth-box form { display: grid; gap: 12px; }
+  .key { font: 500 .8rem var(--mono); background: var(--bg); border: 1px dashed var(--border); border-radius: 8px;
+         padding: 8px 10px; word-break: break-all; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .locked { font-size: .82rem; color: var(--text-2); margin: 0 0 14px; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
+<section class="wrap" id="auth" hidden>
+  <div class="card auth-box">
     <h1>GrgTrading</h1>
+    <p id="auth-text"></p>
+    <form id="auth-form">
+      <label class="field">Password<input type="password" id="pw1" autocomplete="current-password" required minlength="8"></label>
+      <label class="field" id="pw2-wrap">Repeat password<input type="password" id="pw2" autocomplete="new-password" minlength="8"></label>
+      <button class="btn primary" id="auth-btn" type="submit">Continue</button>
+      <div class="msg err" id="auth-msg" role="alert"></div>
+    </form>
+  </div>
+</section>
+
+<div class="wrap" id="app" hidden>
+  <header>
+    <h1 id="bot-name">GrgTrading</h1>
     <span class="badge" id="mode">…</span>
     <span class="status" id="status"><i></i><span>Loading…</span></span>
     <span class="spacer"></span>
     <span class="updated" id="updated"></span>
+    <button class="link" id="logout" type="button">Log out</button>
   </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-view="overview" aria-selected="true">Overview</button>
+    <button role="tab" data-view="bots" aria-selected="false">Bots</button>
+    <button role="tab" data-view="settings" aria-selected="false">Settings</button>
+  </nav>
+
+  <main id="view-overview">
 
   <div class="card alert" id="kill" hidden></div>
 
@@ -132,8 +186,57 @@
     <div class="table-wrap"><table id="trades"></table></div>
   </section>
 
-  <p class="note">Private dashboard served by your bot on the local network. Refreshes every 30 seconds.
-    Paper mode values are simulated.</p>
+  </main>
+
+  <main id="view-bots" hidden>
+    <section class="card" style="margin-bottom:16px">
+      <div class="chart-head"><h2>Bots</h2><span class="updated" id="bots-count"></span></div>
+      <div class="table-wrap"><table id="bots"></table></div>
+    </section>
+    <section class="card">
+      <h2>Add a bot</h2>
+      <p class="locked">Each bot runs its own dashboard. Open the other bot's dashboard → Settings → copy its fleet key.</p>
+      <form id="add-bot" class="form-grid">
+        <label class="field">Dashboard address<input id="bot-url" placeholder="http://pi2.local:8080" required></label>
+        <label class="field">Fleet key<input id="bot-key" required autocomplete="off"></label>
+        <div class="actions" style="margin-top:22px"><button class="btn primary" type="submit">Add bot</button>
+          <span class="msg" id="bot-msg" role="status"></span></div>
+      </form>
+    </section>
+  </main>
+
+  <main id="view-settings" hidden>
+    <div class="stack">
+      <section class="card">
+        <h2>Bot settings</h2>
+        <p class="locked" id="locked"></p>
+        <form id="settings-form">
+          <div class="form-grid" id="settings-fields"></div>
+          <div class="actions"><button class="btn primary" type="submit" id="save-btn">Save settings</button>
+            <span class="msg" id="settings-msg" role="status"></span></div>
+        </form>
+      </section>
+      <section class="card">
+        <h2>Fleet key</h2>
+        <p class="locked">Paste this key into another bot's dashboard (Bots → Add a bot) so it can show this bot's
+          summary. It only unlocks read-only numbers, never settings.</p>
+        <div class="actions" style="margin-top:0"><div class="key" id="fleet-key">…</div>
+          <button class="btn small" type="button" id="copy-key">Copy</button></div>
+      </section>
+      <section class="card">
+        <h2>Change password</h2>
+        <form id="pw-form" class="form-grid">
+          <label class="field">Current password<input type="password" id="pw-cur" autocomplete="current-password" required></label>
+          <label class="field">New password<input type="password" id="pw-new" autocomplete="new-password" minlength="8" required></label>
+          <div class="actions" style="margin-top:22px"><button class="btn" type="submit">Change password</button>
+            <span class="msg" id="pw-msg" role="status"></span></div>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <p class="note">Private dashboard served by your bot on the local network. Paper mode values are simulated.
+    Mode, exchange and API keys can only be changed over SSH.</p>
 </div>
 
 <script>
@@ -153,18 +256,184 @@
   };
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+  // ---------- api & auth ----------
+  async function api(path, body) {
+    const opts = body === undefined ? { cache: "no-store" }
+      : { method: "POST", headers: { "Content-Type": "application/json", "X-GRG": "1" }, body: JSON.stringify(body) };
+    const res = await fetch(path, opts);
+    let json = {};
+    try { json = await res.json(); } catch {}
+    if (res.status === 401 && path !== "api/login") { showAuth(false); throw new Error("login required"); }
+    if (!res.ok) throw new Error(json.error || res.statusText);
+    return json;
+  }
+
+  let setupMode = false;
+  function showAuth(firstTime) {
+    setupMode = firstTime;
+    $("app").hidden = true; $("auth").hidden = false;
+    $("auth-text").textContent = firstTime
+      ? "Welcome! Create the password for this dashboard. You will need it every time you log in."
+      : "Enter your dashboard password.";
+    $("pw2-wrap").hidden = !firstTime;
+    $("pw2").required = firstTime;
+    $("pw1").autocomplete = firstTime ? "new-password" : "current-password";
+    $("auth-btn").textContent = firstTime ? "Create password" : "Log in";
+    $("auth-msg").textContent = "";
+    $("pw1").focus();
+  }
+
+  $("auth-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const pw = $("pw1").value;
+    if (setupMode && pw !== $("pw2").value) { $("auth-msg").textContent = "The passwords do not match."; return; }
+    try {
+      await api(setupMode ? "api/setup" : "api/login", { password: pw });
+      $("pw1").value = $("pw2").value = "";
+      startApp();
+    } catch (err) { $("auth-msg").textContent = err.message; }
+  });
+
+  $("logout").addEventListener("click", async () => { await api("api/logout", {}); showAuth(false); });
+
+  let timer = null;
+  function startApp() {
+    $("auth").hidden = true; $("app").hidden = false;
+    load();
+    clearInterval(timer);
+    timer = setInterval(() => { if (!$("view-overview").hidden) load(); if (!$("view-bots").hidden) loadBots(); }, 30000);
+  }
+
+  async function boot() {
+    try {
+      const a = await api("api/auth");
+      if (!a.configured) showAuth(true); else if (!a.logged_in) showAuth(false); else startApp();
+    } catch (err) { document.body.textContent = "Dashboard error: " + err.message; }
+  }
+
+  // ---------- tabs ----------
+  document.querySelector(".tabs").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    ["overview", "bots", "settings"].forEach((v) => ($("view-" + v).hidden = v !== b.dataset.view));
+    if (b.dataset.view === "overview") load();
+    if (b.dataset.view === "bots") loadBots();
+    if (b.dataset.view === "settings") loadSettings();
+  });
+
   // ---------- data ----------
   async function load() {
     try {
-      const res = await fetch("api/data", { cache: "no-store" });
-      if (!res.ok) throw new Error((await res.json()).error || res.statusText);
-      data = await res.json();
+      data = await api("api/data");
       render();
       $("updated").textContent = "Updated " + new Date().toLocaleTimeString();
     } catch (err) {
-      setStatus("critical", "Dashboard error: " + err.message);
+      if (err.message !== "login required") setStatus("critical", "Dashboard error: " + err.message);
     }
   }
+
+  // ---------- bots ----------
+  async function loadBots() {
+    let rows;
+    try { rows = await api("api/bots"); } catch (err) { $("bots").innerHTML = `<tr><td class="txt">${esc(err.message)}</td></tr>`; return; }
+    const online = rows.filter((r) => r.online && r.heartbeat_age_s != null && r.heartbeat_age_s < 180).length;
+    $("bots-count").textContent = `${rows.length} bot${rows.length === 1 ? "" : "s"} · ${online} running`;
+    $("bots").innerHTML = `<tr><th>Name</th><th>Status</th><th>Mode</th><th>Pairs</th><th class="num">Equity</th>
+      <th class="num">P&amp;L</th><th class="num">Trades</th><th class="num">Win rate</th><th class="num">Open</th><th></th></tr>` +
+      rows.map((r) => {
+        if (!r.online) return `<tr><td class="txt">${esc(r.name)}</td>
+          <td class="txt"><span class="dot" style="background:var(--critical)"></span>! ${esc(r.error)}</td>
+          <td colspan="7" class="txt" style="color:var(--muted)">${esc(r.url)}</td>
+          <td><button class="btn small" data-remove="${esc(r.url)}">Remove</button></td></tr>`;
+        const age = r.heartbeat_age_s;
+        const running = age != null && age < 180;
+        const eq = Number(r.equity) || 0, pnl = eq - (Number(r.start_equity) || 0);
+        const wr = r.summary.win_rate == null ? null : Number(r.summary.win_rate);
+        const status = running ? `<span class="dot" style="background:var(--good)"></span>✓ Running`
+          : `<span class="dot" style="background:var(--critical)"></span>! ${age == null ? "Not started" : "Offline"}`;
+        const action = r.local ? '<span class="updated">this bot</span>'
+          : `<a class="btn small" href="${esc(r.url)}" target="_blank" rel="noopener">Open</a>
+             <button class="btn small" data-remove="${esc(r.url)}">Remove</button>`;
+        return `<tr><td class="txt"><strong>${esc(r.name)}</strong></td><td class="txt">${status}${r.kill_switch ? " · kill switch" : ""}</td>
+          <td>${esc(String(r.mode).toUpperCase())}</td><td>${esc([].concat(r.symbols || []).join(", "))} · ${esc(r.timeframe)}</td>
+          <td class="num">${eq.toFixed(2)} ${esc(r.quote)}</td><td class="num">${arrow(pnl)}${signed(pnl)}</td>
+          <td class="num">${Number(r.summary.closed_trades) || 0}</td><td class="num">${wr == null ? "–" : Math.round(wr * 100) + "%"}</td>
+          <td class="num">${Number(r.open_positions) || 0}</td><td>${action}</td></tr>`;
+      }).join("");
+  }
+
+  $("bots").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-remove]"); if (!b) return;
+    if (!confirm("Remove this bot from the list? The bot itself keeps running.")) return;
+    await api("api/bots/remove", { url: b.dataset.remove });
+    loadBots();
+  });
+
+  $("add-bot").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = $("bot-msg"); msg.className = "msg"; msg.textContent = "Connecting…";
+    try {
+      const r = await api("api/bots/add", { url: $("bot-url").value, key: $("bot-key").value });
+      msg.className = "msg ok"; msg.textContent = `✓ Added ${r.name}`;
+      $("bot-url").value = $("bot-key").value = "";
+      loadBots();
+    } catch (err) { msg.className = "msg err"; msg.textContent = "! " + err.message; }
+  });
+
+  // ---------- settings ----------
+  let settingsFields = [];
+  async function loadSettings() {
+    const s = await api("api/settings");
+    settingsFields = s.fields;
+    $("locked").textContent = `Mode ${s.locked.mode.toUpperCase()} · exchange ${s.locked.exchange} · quote ${s.locked.quote} (change over SSH). Saving restarts the bot with the new settings; open positions are kept.`;
+    $("fleet-key").textContent = s.fleet_key;
+    $("settings-fields").innerHTML = s.fields.map((f) => {
+      const help = f.help ? `<span class="help">${esc(f.help)}</span>` : "";
+      if (f.type === "bool") return `<label class="field"><span>${esc(f.label)}</span>
+          <span class="switch"><input type="checkbox" name="${f.key}" ${f.value ? "checked" : ""}> enabled</span>${help}</label>`;
+      if (f.type === "select") return `<label class="field">${esc(f.label)}<select name="${f.key}">` +
+          f.options.map((o) => `<option ${o === f.value ? "selected" : ""}>${esc(o)}</option>`).join("") + `</select>${help}</label>`;
+      if (f.type === "int" || f.type === "float") return `<label class="field">${esc(f.label)}
+          <input type="number" name="${f.key}" value="${f.value}" min="${f.min}" max="${f.max}" step="${f.step}" required>${help}</label>`;
+      return `<label class="field">${esc(f.label)}<input name="${f.key}" value="${esc(f.value)}">${help}</label>`;
+    }).join("");
+  }
+
+  $("settings-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.target, values = {};
+    for (const f of settingsFields) {
+      const el = form.elements[f.key];
+      const v = f.type === "bool" ? el.checked : f.type === "int" || f.type === "float" ? Number(el.value) : el.value;
+      if (String(v) !== String(f.value)) values[f.key] = v;
+    }
+    const msg = $("settings-msg");
+    if (!Object.keys(values).length) { msg.className = "msg"; msg.textContent = "Nothing changed."; return; }
+    $("save-btn").disabled = true;
+    try {
+      const r = await api("api/settings", { values });
+      msg.className = "msg ok";
+      msg.textContent = `✓ Saved (${r.changed.length} change${r.changed.length === 1 ? "" : "s"}). The bot restarts with the new settings within about a minute.`;
+      loadSettings();
+    } catch (err) { msg.className = "msg err"; msg.textContent = "! " + err.message; }
+    $("save-btn").disabled = false;
+  });
+
+  $("copy-key").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("fleet-key").textContent); $("copy-key").textContent = "Copied"; }
+    catch { $("copy-key").textContent = "Select & copy"; }
+    setTimeout(() => ($("copy-key").textContent = "Copy"), 1500);
+  });
+
+  $("pw-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = $("pw-msg");
+    try {
+      await api("api/password", { current: $("pw-cur").value, new: $("pw-new").value });
+      msg.className = "msg ok"; msg.textContent = "✓ Password changed. Other devices are logged out.";
+      $("pw-cur").value = $("pw-new").value = "";
+    } catch (err) { msg.className = "msg err"; msg.textContent = "! " + err.message; }
+  });
 
   function setStatus(kind, text) {
     const el = $("status");
@@ -173,6 +442,8 @@
   }
 
   function render() {
+    $("bot-name").textContent = data.name;
+    document.title = data.name + " · GrgTrading";
     $("mode").textContent = `${data.mode.toUpperCase()} · ${data.exchange} · ${data.timeframe}`;
     const age = data.heartbeat_age_s;
     if (age == null) setStatus("warning", "Bot has not run yet");
@@ -421,8 +692,7 @@
   window.addEventListener("resize", () => { if (data) { drawEquity(); drawPnl(); } });
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => data && render());
 
-  load();
-  setInterval(load, 30000);
+  boot();
 })();
 </script>
 </body>

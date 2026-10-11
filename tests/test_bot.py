@@ -169,35 +169,155 @@ def test_live_mode_requires_confirmation():
     Config(mode="live", api_key="k", api_secret="s", live_confirm="I_UNDERSTAND_THE_RISKS").validate()
 
 
-def test_dashboard_serves_data(tmp_path):
-    import json
-    import threading
-    import urllib.request
-    from http.server import ThreadingHTTPServer
-    from grgtrading.dashboard import make_handler
-    from grgtrading.storage import TradeJournal
 
-    c = cfg(tmp_path, buy_threshold=0.55, min_model_edge=-1.0, dashboard_password="secret")
+# ---------------------------------------------------------------- dashboard
+import json as _json
+import threading
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
+
+from grgtrading.dashboard import AuthStore, make_handler
+from grgtrading.settings import parse_changes, write_env
+from grgtrading.storage import TradeJournal
+
+
+class Client:
+    def __init__(self, url):
+        self.url, self.cookie = url, ""
+
+    def call(self, path, body=None, headers=None):
+        h = {"Cookie": self.cookie, **(headers or {})}
+        data = None
+        if body is not None:
+            data = _json.dumps(body).encode()
+            h.setdefault("X-GRG", "1")
+            h["Content-Type"] = "application/json"
+        req = urllib.request.Request(self.url + path, data=data, headers=h)
+        try:
+            res = urllib.request.urlopen(req)
+        except urllib.error.HTTPError as exc:
+            return exc.code, _json.loads(exc.read() or b"{}")
+        cookie = res.headers.get("Set-Cookie")
+        if cookie:
+            self.cookie = cookie.split(";")[0]
+        return res.status, _json.loads(res.read())
+
+
+def start_dashboard(c, env_path):
+    auth = AuthStore(c.data_dir / "dashboard_auth.json", c.dashboard_password)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(c, auth, env_path=env_path))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, auth, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def make_bot_data(c):
     df = synthetic_ohlcv(3001, seed=4, momentum=0.4)
     TradingBot(c, broker=PaperBroker(c, FakeExchange(df))).step()
-    j = TradeJournal(tmp_path / "trades_paper.db")
+    j = TradeJournal(c.data_dir / "trades_paper.db")
     j.record(ts="2024-01-01T00:00:00+00:00", mode="paper", symbol="BTC/USDT", side="sell",
              amount=1, price=100, cost=100, fee=0.1, reason="take_profit", pnl=1.5)
     j.close()
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(c))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    url = f"http://127.0.0.1:{server.server_address[1]}"
+
+def test_settings_validation(tmp_path):
+    c = cfg(tmp_path)
+    assert parse_changes(c, {"buy_threshold": 0.7, "symbols": "btc/usdt, sol/usdt"}) == {
+        "buy_threshold": 0.7, "symbols": ("BTC/USDT", "SOL/USDT")}
+    for bad in ({"mode": "live"}, {"api_key": "x"}, {"risk_per_trade": 0.5}, {"buy_threshold": "abc"},
+                {"symbols": "BTC/EUR"}, {"sell_threshold": 0.6, "buy_threshold": 0.55}, {"timeframe": "2m"},
+                {"bot_name": "bad<name>"}):
+        with pytest.raises(ValueError):
+            parse_changes(c, bad)
+    with pytest.raises(ValueError, match="open position"):
+        parse_changes(c, {"symbols": "ETH/USDT"}, open_symbols={"BTC/USDT"})
+
+
+def test_write_env_keeps_other_lines(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("# comment\nMODE=paper\nBUY_THRESHOLD=0.60\nAPI_KEY=secret\n")
+    write_env(env, {"buy_threshold": 0.65, "trailing_stop": False, "symbols": ("BTC/USDT",)})
+    text = env.read_text()
+    assert "# comment" in text and "MODE=paper" in text and "API_KEY=secret" in text
+    assert "BUY_THRESHOLD=0.65" in text and "TRAILING_STOP=false" in text and "SYMBOLS=BTC/USDT" in text
+    assert (tmp_path / ".env.bak").exists()
+
+
+def test_dashboard_auth_settings_and_fleet(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setattr(os, "environ", os.environ.copy())  # .env reloads must not leak into other tests
+    env = tmp_path / ".env"
+    env.write_text("MODE=paper\n")
+    c = cfg(tmp_path, buy_threshold=0.55, min_model_edge=-1.0)
+    make_bot_data(c)
+    server, auth, url = start_dashboard(c, env)
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    env2 = other_dir / ".env"
+    env2.write_text("MODE=paper\n")
+    c2 = cfg(other_dir, bot_name="pi-two", dashboard_password="other-password")
+    make_bot_data(c2)
+    server2, auth2, url2 = start_dashboard(c2, env2)
+    cl = Client(url)
     try:
-        with pytest.raises(urllib.error.HTTPError) as err:
-            urllib.request.urlopen(url + "/api/data")
-        assert err.value.code == 401
-        req = urllib.request.Request(url + "/api/data", headers={"Authorization": "Basic dTpzZWNyZXQ="})
-        data = json.load(urllib.request.urlopen(req))
-        assert data["start_equity"] == c.starting_balance
-        assert data["summary"]["closed_trades"] == 1
-        assert len(data["equity_history"]) == 1
-        page = urllib.request.urlopen(urllib.request.Request(url + "/", headers={"Authorization": "Basic dTpzZWNyZXQ="}))
-        assert b"GrgTrading" in page.read()
+        assert cl.call("/api/auth")[1] == {"configured": False, "logged_in": False}
+        assert cl.call("/api/data")[0] == 401
+        assert cl.call("/api/setup", {"password": "short"})[0] == 400
+        assert cl.call("/api/setup", {"password": "long-enough"}, headers={"X-GRG": "0"})[0] == 403
+        assert cl.call("/api/setup", {"password": "long-enough"})[0] == 200
+        assert cl.call("/api/setup", {"password": "another-one"})[0] == 409  # only once
+
+        status, data = cl.call("/api/data")
+        assert status == 200 and data["summary"]["closed_trades"] == 1 and data["name"]
+
+        other = Client(url)
+        assert other.call("/api/login", {"password": "wrong-pass"})[0] == 401
+        assert other.call("/api/login", {"password": "long-enough"})[0] == 200
+        assert other.call("/api/data")[0] == 200
+
+        # settings: allowed change is written, forbidden ones are refused
+        assert cl.call("/api/settings", {"values": {"buy_threshold": 0.7, "bot_name": "main"}})[0] == 200
+        assert "BUY_THRESHOLD=0.7" in env.read_text() and "BOT_NAME=main" in env.read_text()
+        assert cl.call("/api/settings", {"values": {"mode": "live"}})[0] == 400
+        assert "MODE=paper" in env.read_text()
+        assert cl.call("/api/settings")[1]["locked"]["mode"] == "paper"
+
+        # fleet: the other bot only answers with its own key
+        assert Client(url2).call("/api/fleet", headers={"X-Fleet-Key": "nope"})[0] == 403
+        assert cl.call("/api/bots/add", {"url": url2, "key": "nope"})[0] == 400
+        key2 = auth2.data["fleet_key"]
+        status, added = cl.call("/api/bots/add", {"url": url2, "key": key2})
+        assert status == 200 and added["name"] == "pi-two"
+        bots = cl.call("/api/bots")[1]
+        assert [b["name"] for b in bots] == ["main", "pi-two"] and all(b["online"] for b in bots)
+        assert "api_key" not in _json.dumps(bots).lower()
+        assert cl.call("/api/bots/remove", {"url": url2})[0] == 200
+        assert len(cl.call("/api/bots")[1]) == 1
+
+        # password change logs out old sessions
+        assert cl.call("/api/password", {"current": "long-enough", "new": "brand-new-pass"})[0] == 200
+        assert other.call("/api/data")[0] == 401
+        assert cl.call("/api/data")[0] == 200
     finally:
         server.shutdown()
+        server2.shutdown()
+
+
+def test_bot_restarts_when_settings_change(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("MODE=paper\n")
+    monkeypatch.setenv("GRG_ENV_FILE", str(env))
+    c = cfg(tmp_path, poll_seconds=60)
+    bot = TradingBot(c, broker=PaperBroker(c, FakeExchange(synthetic_ohlcv(3001, seed=4))))
+    monkeypatch.setattr(bot, "step", lambda: None)
+    monkeypatch.setattr("grgtrading.bot.signal.signal", lambda *a: None)
+
+    def edit():
+        import time as _t
+        _t.sleep(1.5)
+        env.write_text("MODE=paper\nBUY_THRESHOLD=0.7\n")
+    threading.Thread(target=edit, daemon=True).start()
+    t = threading.Thread(target=bot.run_forever, daemon=True)
+    t.start()
+    t.join(timeout=10)
+    assert not t.is_alive()  # exited so systemd restarts it with the new settings
